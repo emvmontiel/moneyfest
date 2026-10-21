@@ -427,7 +427,7 @@ const state = {
   more: 'menu',
   filters: { q: '', type: 'all', cat: '', wallet: '', tag: '', status: 'all', min: '', max: '', from: '', to: '' },
   showFilters: false, selecting: false, selected: new Set(), showLimit: 150,
-  sample: null, sampleImages: false, downloads: null,
+  sample: null, sampleImages: false, downloads: null, reflectAI: {}, reflectBusy: null, reflectMsg: '',
 };
 
 function mergeSettings(raw) {
@@ -1982,10 +1982,11 @@ function viewReports() {
     v.append(el('div', { class: 'banner info' }, el('span', { text: 'Your ' + monthLabel(lastMk).split(' ')[0] + ' recap is ready.' }), el('button', { class: 'linkbtn', type: 'button', text: 'See recap', onclick: () => openRecap(lastMk) })));
   }
   const seg = el('div', { class: 'seg' });
-  [['month', 'Month'], ['year', 'Year'], ['worth', 'Net worth']].forEach(([k, l]) => seg.append(el('button', { type: 'button', 'aria-pressed': String(state.reportView === k), text: l, onclick: () => { state.reportView = k; render(); } })));
+  [['month', 'Month'], ['year', 'Year'], ['worth', 'Net worth'], ['reflect', 'Reflect']].forEach(([k, l]) => seg.append(el('button', { type: 'button', 'aria-pressed': String(state.reportView === k), text: l, onclick: () => { state.reportView = k; render(); } })));
   v.append(seg);
   if (state.reportView === 'month') reportMonth(v);
   else if (state.reportView === 'year') reportYear(v);
+  else if (state.reportView === 'reflect') reportReflect(v);
   else reportWorth(v);
   return v;
 }
@@ -2008,6 +2009,109 @@ function reportMonth(v) {
   monthEntries(mk).forEach((e) => { const sp = spendOf(e); if (sp) (e.tags || []).forEach((t) => { tagTotals[t] = round2((tagTotals[t] || 0) + sp[1]); }); });
   const tagRows = Object.entries(tagTotals).sort((a, b) => b[1] - a[1]);
   if (tagRows.length) { v.append(el('h2', { class: 'sec', text: 'By tag' })); v.append(barList(tagRows.map(([t, x]) => ['#' + t, x]), { color: 'blue' })); }
+}
+/* ================= reflect: a plain-language read on a month ================= */
+const DAYNAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const monthName = (mk) => MONTHS[Number(mk.slice(5)) - 1];
+const reflName = (id) => (id ? catName(id) : 'Uncategorized');
+function reflectInsights(mk) {
+  const es = monthEntries(mk).filter((e) => !e.hidden);
+  const s = summarize(es), prevMk = addMonths(mk, -1), ps = summarize(monthEntries(prevMk));
+  const last = monthName(prevMk), isCur = mk === curMK();
+  const days = isCur ? Number(todayISO().slice(8)) : daysIn(mk);
+  const pct = (v, of) => Math.round((v / of) * 100);
+  const out = [];
+  const top = Object.entries(s.cats).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  if (top.length) {
+    const [id, v] = top[0], before = ps.cats[id] || 0, d = round2(v - before);
+    out.push({ label: 'Biggest category', text: reflName(id) + ' was your biggest category at ' + peso(v) + ', ' + pct(v, s.spent) + '% of what you spent.' + (before && d ? ' That is ' + peso(Math.abs(d)) + (d > 0 ? ' more' : ' less') + ' than ' + last + '.' : '') });
+    const share = pct(top.slice(0, 3).reduce((a, [, x]) => a + x, 0), s.spent);
+    out.push({ label: 'Where it went', text: top.length > 3 ? 'Your top three categories made up ' + share + '% of your spending.' : 'Here is how your spending split up.', bars: top.slice(0, 5).map(([k, x]) => [reflName(k) + ' (' + pct(x, s.spent) + '%)', x]) });
+  }
+  if (s.spent || s.income) {
+    const parts = [];
+    if (ps.spent > 0) { const d = round2(s.spent - ps.spent); parts.push('You spent ' + peso(s.spent) + (d ? ', ' + peso(Math.abs(d)) + (d > 0 ? ' more' : ' less') + ' than ' + last + ' (' + peso(ps.spent) + ').' : ', the same as ' + last + '.')); }
+    else parts.push('You spent ' + peso(s.spent) + '. There is nothing logged for ' + last + ' to compare with.');
+    if (s.income > 0) parts.push(s.net >= 0 ? 'You kept ' + peso(s.net) + ', ' + pct(s.net, s.income) + '% of what came in.' : 'Spending ran ' + peso(-s.net) + ' ahead of the ' + peso(s.income) + ' that came in.');
+    out.push({ label: 'Compared with ' + last, text: parts.join(' ') });
+  }
+  if (s.spent > 0 && days >= 3) {
+    const avg = s.spent / days, prevAvg = ps.spent / daysIn(prevMk);
+    let t = isCur ? 'You have spent ' + peso(s.spent) + ' in ' + days + ' days, about ' + peso(avg) + ' a day. At this pace the month ends near ' + peso(avg * daysIn(mk)) + '.' : 'You spent about ' + peso(avg) + ' a day over the month.';
+    if (ps.spent > 0) t += ' ' + (isCur ? 'Last month' : monthName(prevMk)) + ' averaged ' + peso(prevAvg) + ' a day.';
+    out.push({ label: 'Pace', text: t });
+  }
+  let big = null;
+  es.forEach((e) => { if (e.kind === 'expense' && (!big || e.amount > big.amount)) big = e; });
+  if (big) out.push({ label: 'Biggest single expense', text: peso(big.amount) + ' for ' + (big.item ? '“' + big.item + '”' : reflName(big.category)) + ' on ' + niceDate(big.date) + '.' });
+  if (ps.spent > 0) {
+    let up = null, down = null;
+    new Set([...Object.keys(s.cats), ...Object.keys(ps.cats)]).forEach((k) => {
+      const d = round2((s.cats[k] || 0) - (ps.cats[k] || 0));
+      if (d >= 100 && (!up || d > up[1])) up = [k, d];
+      if (d <= -100 && (!down || d < down[1])) down = [k, d];
+    });
+    const bits = [];
+    if (up) bits.push(reflName(up[0]) + ' went up the most, ' + peso(up[1]) + ' more than ' + last + '.');
+    if (down) bits.push(reflName(down[0]) + ' dropped the most, ' + peso(-down[1]) + ' less than ' + last + '.');
+    if (bits.length) out.push({ label: 'Biggest changes', text: bits.join(' ') });
+  }
+  const groups = {};
+  es.forEach((e) => { if (e.kind !== 'expense' || !e.item) return; const k = normName(e.item); if (!k) return; const g = groups[k] || (groups[k] = { name: e.item, count: 0, total: 0 }); g.count++; g.total = round2(g.total + e.amount); });
+  const small = Object.values(groups).filter((g) => g.count >= 3 && g.total / g.count < 500).sort((a, b) => b.total - a.total).slice(0, 2);
+  if (small.length) out.push({ label: 'Small things add up', text: small.map((g) => '“' + g.name + '” came up ' + g.count + ' times, ' + peso(g.total) + ' in all.').join(' ') });
+  if (days >= 10 && s.spent > 0) {
+    const [y, m] = mk.split('-').map(Number);
+    const tot = Array(7).fill(0), cnt = Array(7).fill(0);
+    for (let d = 1; d <= days; d++) cnt[new Date(y, m - 1, d).getDay()]++;
+    es.forEach((e) => { const sp = spendOf(e); if (!sp) return; const [yy, mm, dd] = e.date.split('-').map(Number); tot[new Date(yy, mm - 1, dd).getDay()] += sp[1]; });
+    let best = -1;
+    tot.forEach((x, i) => { if (cnt[i] && (best < 0 || x / cnt[i] > tot[best] / cnt[best])) best = i; });
+    if (best >= 0) out.push({ label: 'When you spend', text: DAYNAMES[best] + 's were your heaviest spending day, about ' + peso(tot[best] / cnt[best]) + ' each. Weekends made up ' + pct(tot[0] + tot[6], s.spent) + '% of your spending.' });
+  }
+  return out;
+}
+let reflectCtl = null;
+function reflectAIBox(mk, items) {
+  const box = el('div', { class: 'panel', style: 'margin-top:14px' }, el('h3', { class: 'sub', style: 'margin-top:0', text: 'Reflection from Claude' }));
+  if (!state.sample) { box.append(el('p', { class: 'muted', style: 'margin:0', text: 'A written reflection from Claude appears here when you open Moneyfest from your Claude account.' })); return box; }
+  const res = state.reflectAI[mk], busy = state.reflectBusy === mk;
+  if (res) {
+    box.append(el('p', { style: 'margin:0 0 10px;white-space:pre-line', text: res.summary }));
+    if (res.questions.length) box.append(el('ul', { style: 'margin:0 0 10px;padding-left:18px' }, res.questions.map((q) => el('li', { text: q }))));
+  } else if (!busy) box.append(el('p', { class: 'muted', style: 'margin:0 0 10px', text: 'Claude reads the figures above, not your individual transactions, and writes a short reflection with a few questions to think about.' }));
+  if (state.reflectMsg && !busy) box.append(el('div', { class: 'form-msg', text: state.reflectMsg }));
+  if (busy) {
+    box.append(el('div', { class: 'muted small' }, 'Writing… ', el('button', { class: 'linkbtn', type: 'button', text: 'Stop', onclick: () => reflectCtl && reflectCtl.abort() })));
+    return box;
+  }
+  box.append(el('button', { class: 'btn small' + (res ? ' ghost' : ''), type: 'button', text: res ? 'Write it again' : 'Write a reflection', onclick: async () => {
+    const facts = items.map((i) => '- ' + i.label + ': ' + i.text + (i.bars ? ' ' + i.bars.map(([n, v]) => n + ' ' + peso(v)).join('; ') + '.' : '')).join('\n');
+    const prompt = 'You are a calm, kind money coach. Below are figures about one person’s spending in ' + monthLabel(mk) + '. Amounts are in Philippine pesos. ' +
+      'Write a short reflection of at most 110 words in plain sentences: notice the patterns, say what stands out, and do not judge or lecture. Then give 2 or 3 short questions they could ask themselves. ' +
+      'Reply with only JSON in this shape: {"summary": "text", "questions": ["question"]}.\n\nFigures:\n' + facts;
+    reflectCtl = new AbortController(); state.reflectBusy = mk; state.reflectMsg = ''; render();
+    try {
+      const r = await state.sample.json(prompt, { signal: reflectCtl.signal });
+      const summary = String(r && r.summary || '').trim();
+      if (!summary) throw { code: 'invalid_json' };
+      state.reflectAI[mk] = { summary, questions: (Array.isArray(r.questions) ? r.questions : []).map((q) => String(q).trim()).filter(Boolean).slice(0, 3) };
+    } catch (e) {
+      const copy = { cancelled: '', not_granted: 'Reflections need your permission to use Claude.', rate_limited: 'Too many requests at once. Wait a moment and try again.', invalid_json: "Couldn't make sense of the reply. Try again." };
+      state.reflectMsg = copy[e && e.code] !== undefined ? copy[e.code] : "Couldn't write the reflection. Try again.";
+      if (e && e.code === 'not_granted') state.sample = null;
+    } finally { reflectCtl = null; state.reflectBusy = null; render(); }
+  } }));
+  return box;
+}
+function reportReflect(v) {
+  const mk = state.reportMonth;
+  v.append(monthNav(mk, (m) => { state.reportMonth = m; render(); }));
+  if (!monthEntries(mk).length) { v.append(el('div', { class: 'empty', text: 'Nothing logged for ' + monthLabel(mk) + ' yet. Add a few transactions and come back.' })); return; }
+  const items = reflectInsights(mk);
+  const ul = el('ul', { class: 'list' });
+  items.forEach((i) => ul.append(el('li', {}, el('div', { class: 'muted small', style: 'font-weight:700;margin-bottom:2px', text: i.label }), el('div', { text: i.text }), i.bars ? el('div', { style: 'margin-top:8px' }, barList(i.bars)) : null)));
+  v.append(ul, reflectAIBox(mk, items));
 }
 function flowChart(s) {
   const T = Math.max(s.income, s.spent);

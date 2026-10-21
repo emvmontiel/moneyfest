@@ -151,9 +151,10 @@ Bottom tab bar with five tabs (`state.tab`): the review count shows as a badge o
    - **Budget**: setup/edit flow (`budgetEditor`, seeded from `historyAverages`), then "Flexible spending left" with per-day allowance, fixed and non-monthly sections, income vs expected. Month navigation.
    - **Bills**: list with status badges, "Log payment" (`logBill`), add/edit sheet.
    - **Goals**: progress, on-track/behind status, "Set aside money"/"Take out", add/edit sheet, free-for-goals pills per wallet.
-4. **Reports** (`viewReports`): banner for last month's recap, then Month / Year / Net worth:
+4. **Reports** (`viewReports`): banner for last month's recap, then Month / Year / Net worth / Reflect:
    - Month: stats (came in, spent, kept + savings rate, ended with), money-flow Sankey-style SVG (`flowChart`), category bars (tap → filtered Transactions), tag totals.
    - Year (`reportYear`) and Net worth (`reportWorth`, `lineChart` over time).
+   - Reflect (`reportReflect`): plain-language insights for a month, computed in the app by `reflectInsights` (biggest category, where it went, vs last month, pace, biggest expense, biggest changes, small repeated purchases, heaviest weekday). Below them, `reflectAIBox` can ask Claude (via the `sample` capability, only when available) for a short written reflection; it is sent the insight sentences, not individual transactions, and the result is kept in `state.reflectAI` for the session only.
    - Recap (`openRecap`): swipeable full-screen cards (glance, budget, top categories, bills, net worth). Marks `recapSeen`.
 5. **More** (`viewMore`, `state.more` selects the sub-screen):
    - **Debt** (`moreUtang`): who owes you / you owe / settled, with per-person history and quick actions that prefill the Add screen.
