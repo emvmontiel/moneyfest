@@ -1503,6 +1503,7 @@ function walletDashboard(fl, since) {
 
 function viewEntries() {
   const v = el('section');
+  if (reviewQueue().length) v.append(reviewBlock());
   if (store.mode === 'db' && state.settings.wallets.every((w) => !w.opening) && state.entries.length === 0) {
     v.append(el('div', { class: 'banner' }, el('span', { text: 'New here? Start by entering how much is in each wallet right now.' }), el('button', { class: 'linkbtn', type: 'button', text: 'Set starting balances', onclick: () => { state.tab = 'more'; state.more = 'setup'; render(); } })));
   } else {
@@ -1534,7 +1535,6 @@ function viewEntries() {
     if (!active.length) v.append(el('div', { class: 'empty', text: 'No wallet activity in this period.' }));
     else active.forEach((w) => v.append(walletCard(w, fl[w.id], b[w.id] || 0)));
   }
-  if (reviewQueue().length) v.append(reviewBlock());
   v.append(el('h2', { class: 'sec', text: 'All transactions' }));
   const q = el('input', { class: 'inp', type: 'search', placeholder: 'Search items, notes, tags, people', value: state.filters.q, 'aria-label': 'Search entries' });
   q.addEventListener('input', () => { state.filters.q = q.value; state.showLimit = 150; renderEntriesList(); });
