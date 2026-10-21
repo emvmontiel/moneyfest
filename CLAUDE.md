@@ -137,8 +137,8 @@ Order of precedence: user's pick this session (`state.overrides`) → saved **ru
 
 Bottom tab bar with five tabs (`state.tab`): the review count shows as a badge on Transactions.
 
-1. **Add** (`viewAdd`, title "Transactions"). Mode chips: *Expense*, *Income*, *Move Funds*.
-   - Expense/Income panel (`itemsPanel`): notes field with autocomplete from past entries (selecting a known name prefills amount/category/wallet), amount, pcs, date, category, wallet, "Not paid yet", and a "This is a debt" toggle (lent / paid back / forgiven for expenses; borrowed / got back for income) with a person field. Category is auto-guessed on blur. Optional receipt scan if the host supports it. Ctrl/Cmd+Enter saves.
+1. **Add** (`viewAdd`, title "Transactions"). Mode chips: *Transaction*, *Move Funds*.
+   - Transaction panel (`itemsPanel`): notes field with autocomplete from past entries (selecting a known name prefills amount/category/wallet), amount, date, an "Add pieces" link that reveals the pcs field, a category picker, wallet, "Not paid yet" (spending only), and a "This is a debt" toggle (lent / paid back / forgiven / borrowed / got back) with a person field. The category picker shows every visible category as a bubble in a Spending group and a Money in group; the group of the picked category sets the entry's kind (`expense` or `income`), so there is no separate expense/income choice. Category is auto-guessed from the note on blur. Optional receipt scan if the host supports it. Ctrl/Cmd+Enter saves.
    - Move Funds (`movePanel`): from/to wallet, amount, fee, date, note.
    - `utangPanel` exists but is not reachable from the current UI; debt entry goes through the toggle above and the Debt screen's quick buttons.
 2. **Transactions** (`viewEntries`, tab id `entries`):

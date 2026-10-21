@@ -92,6 +92,11 @@ h3.sub { font-size: 15px; margin: 18px 0 8px; }
 .check input { width: 18px; height: 18px; }
 .chip-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 11px; font-size: 13px; font-weight: 600; }
 .chip-btn[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip-btn.in { border-color: var(--earn); color: var(--earn); }
+.chip-btn.in[aria-pressed="true"] { background: var(--earn); border-color: var(--earn); color: var(--accent-ink); }
+.bubbles-wrap { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 8px; }
+.bubble-label { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.bubbles { display: flex; flex-wrap: wrap; gap: 8px; }
 .freq { display: flex; gap: 7px; flex-wrap: wrap; margin: 4px 0 12px; }
 .freq button { border: 1px dashed var(--line); background: var(--bg); border-radius: 999px; padding: 5px 11px; font-size: 13px; }
 .freq button span { color: var(--muted); margin-left: 4px; }
@@ -921,16 +926,9 @@ function reviewBlock() {
 function viewAdd() {
   const v = el('section');
   v.append(el('h1', { class: 'title', text: 'Transactions' }));
-  const qd = state.quickDraft;
   const row = el('div', { class: 'row', role: 'group', 'aria-label': 'What are you logging', style: 'gap:8px;margin-bottom:14px' });
   const modeBtn = (active, label, onclick) => row.append(el('button', { type: 'button', class: 'chip-btn', 'aria-pressed': String(active), text: label, onclick }));
-  const goItems = (kind) => () => {
-    const d = state.quickDraft || (state.quickDraft = { kind, date: todayISO(), wallet: state.settings.lastWallet, catTouched: false });
-    if (d.kind !== kind) { d.kind = kind; d.catTouched = false; d.category = ''; }
-    state.mode = 'items'; render();
-  };
-  modeBtn(state.mode === 'items' && (!qd || qd.kind !== 'income'), 'Expense', goItems('expense'));
-  modeBtn(state.mode === 'items' && !!qd && qd.kind === 'income', 'Income', goItems('income'));
+  modeBtn(state.mode === 'items', 'Transaction', () => { state.mode = 'items'; render(); });
   modeBtn(state.mode === 'move', 'Move Funds', () => { state.mode = 'move'; render(); });
   v.append(row);
   if (state.mode === 'items') v.append(itemsPanel());
@@ -938,11 +936,11 @@ function viewAdd() {
   return v;
 }
 
-// previously typed notes for the current kind, newest first, so a repeated transaction can be recalled by name
-function savedNotes(kind) {
+// previously typed notes, newest first, so a repeated transaction can be recalled by name
+function savedNotes() {
   const map = new Map();
   for (const e of state.entries) {
-    if (e.kind !== kind || !e.item) continue;
+    if ((e.kind !== 'expense' && e.kind !== 'income') || !e.item) continue;
     const key = normName(e.item); if (!key) continue;
     const prev = map.get(key);
     if (!prev || e.date > prev.date || (e.date === prev.date && (e.ts || 0) > (prev.ts || 0))) map.set(key, { label: e.item, amount: e.amount, category: e.category, wallet: e.wallet, date: e.date, ts: e.ts || 0 });
@@ -953,12 +951,11 @@ function itemsPanel() {
   const d = state.quickDraft || (state.quickDraft = { kind: 'expense', date: todayISO(), wallet: state.settings.lastWallet, catTouched: false });
   const isDebt = !!d.debtAction;
   const p = el('div', { class: 'panel' });
-  const saved = savedNotes(d.kind);
-
-  // debt actions available for each kind
-  const DEBT_EXP = [['lent','I lent money'],['paid_back','I paid someone back'],['forgiven','Letting them keep it']];
-  const DEBT_INC = [['borrowed','I borrowed money'],['got_back','They paid me back']];
-  const debtOpts = d.kind === 'income' ? DEBT_INC : DEBT_EXP;
+  const saved = savedNotes();
+  // spending or money in follows from the category picked; debts carry their own kind
+  const kindOf = () => { const c = cat(d.category); return c && c.type === 'income' ? 'income' : 'expense'; };
+  d.kind = kindOf();
+  const debtOpts = [['lent','I lent money'],['paid_back','I paid someone back'],['forgiven','Letting them keep it'],['borrowed','I borrowed money'],['got_back','They paid me back']];
 
   // debt toggle
   const debtToggle = el('input', { type: 'checkbox', id: 'q-debt', checked: isDebt });
@@ -973,9 +970,9 @@ function itemsPanel() {
     d.unpaid = false; unpaidToggle.checked = false;
     debtRow.hidden = !debtToggle.checked;
     debtAction.value = d.debtAction || debtOpts[0][0];
-    syncVis(); sync();
+    afterDebtChange();
   });
-  debtAction.addEventListener('change', () => { d.debtAction = debtAction.value; syncVis(); });
+  debtAction.addEventListener('change', () => { d.debtAction = debtAction.value; afterDebtChange(); });
   person.addEventListener('input', () => { d.person = person.value; sync(); });
 
   const name = el('input', { id: 'q-name', class: 'noteinput', autocomplete: 'off', placeholder: 'Notes', list: 'name-list', value: d.name || '' });
@@ -988,9 +985,7 @@ function itemsPanel() {
   pcsWrap.hidden = !d.pcs;
   pcsLink.hidden = !pcsWrap.hidden;
   pcsLink.addEventListener('click', () => { pcsWrap.hidden = false; pcsLink.hidden = true; pcs.focus(); });
-  const catSel = categorySelect(d.category, { placeholder: 'Pick a category', includeExpense: d.kind === 'expense', includeIncome: d.kind === 'income', cls: 'inp' });
-  catSel.id = 'q-cat';
-  const catWrap = el('label', { class: 'field grow' }, el('span', { text: 'Category' }), catSel);
+  const catWrap = el('div', { class: 'bubbles-wrap', id: 'q-cat', role: 'group', 'aria-label': 'Category' });
   const wSel = walletSelect(d.wallet, 'inp'); wSel.id = 'q-wallet';
   const wWrap = el('label', { class: 'field grow' }, el('span', { text: 'Wallet' }), wSel);
   const save = el('button', { class: 'btn', type: 'button', id: 'q-save', text: 'Save', disabled: true });
@@ -1011,12 +1006,35 @@ function itemsPanel() {
   };
   syncVis();
 
+  // every category as a bubble; the group it belongs to decides spending or money in
+  const drawBubbles = () => {
+    catWrap.innerHTML = '';
+    const groups = d.debtAction === 'forgiven' ? [['Spending', 'expense']] : [['Spending', 'expense'], ['Money in', 'income']];
+    for (const [label, type] of groups) {
+      const list = state.settings.categories.filter((c) => c.type === type && (!c.hidden || c.id === d.category));
+      if (!list.length) continue;
+      catWrap.append(el('div', { class: 'bubble-group' }, el('div', { class: 'bubble-label', text: label }),
+        el('div', { class: 'bubbles' }, list.map((c) => el('button', { type: 'button', class: 'chip-btn ' + (type === 'income' ? 'in' : 'out'), 'aria-pressed': String(c.id === d.category), text: c.name, onclick: () => setCat(c.id, true) })))));
+    }
+  };
+  const setCat = (id, touched) => {
+    d.category = id; if (touched) d.catTouched = true;
+    d.kind = kindOf();
+    if (d.kind === 'income' && d.unpaid) { d.unpaid = false; unpaidToggle.checked = false; }
+    drawBubbles(); syncVis(); sync();
+  };
+  const afterDebtChange = () => {
+    if (d.debtAction === 'forgiven' && kindOf() === 'income') { d.category = ''; d.kind = 'expense'; }
+    drawBubbles(); syncVis(); sync();
+  };
+  drawBubbles();
+
   const sync = () => {
     const act = d.debtAction;
     const needsCat = !act || act === 'forgiven';
     const needsWallet = !d.unpaid && act !== 'forgiven';
     const needsPerson = !!act;
-    save.disabled = !(name.value.trim() && Number(amount.value) > 0 && (!needsCat || catSel.value) && (!needsWallet || wSel.value) && (!needsPerson || person.value.trim()));
+    save.disabled = !(name.value.trim() && Number(amount.value) > 0 && (!needsCat || d.category) && (!needsWallet || wSel.value) && (!needsPerson || person.value.trim()));
     msg.textContent = '';
   };
   name.addEventListener('input', () => {
@@ -1024,15 +1042,15 @@ function itemsPanel() {
     const hit = saved.get(normName(name.value));
     if (hit && !d.debtAction) {
       d.amount = hit.amount; amount.value = hit.amount;
-      if (cat(hit.category) && !cat(hit.category).hidden) { d.category = hit.category; catSel.value = hit.category; d.catTouched = true; }
+      if (cat(hit.category) && !cat(hit.category).hidden) setCat(hit.category, true);
       if (wallet(hit.wallet) && !wallet(hit.wallet).hidden) { d.wallet = hit.wallet; wSel.value = hit.wallet; }
       sync();
     }
   });
   name.addEventListener('blur', () => {
     if (!d.catTouched && !d.debtAction && name.value.trim()) {
-      const g = guessCategory({ name: name.value, incoming: d.kind === 'income' });
-      if (g.id) { d.category = g.id; catSel.value = g.id; }
+      const g = guessCategory({ name: name.value, incoming: false });
+      if (g.id) setCat(g.id, false);
     }
     sync();
   });
@@ -1042,8 +1060,7 @@ function itemsPanel() {
   pcs.addEventListener('input', () => { d.pcs = pcs.value; });
   pcs.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); dateInp.focus(); } });
   dateInp.addEventListener('change', () => { d.date = dateInp.value || todayISO(); });
-  dateInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); catSel.focus(); } });
-  catSel.addEventListener('change', () => { d.category = catSel.value; d.catTouched = true; sync(); });
+  dateInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = $('[aria-pressed="true"]', catWrap) || $('button', catWrap); if (b) b.focus(); } });
   wSel.addEventListener('change', () => { d.wallet = wSel.value; sync(); });
 
   save.addEventListener('click', async () => {
@@ -1054,21 +1071,20 @@ function itemsPanel() {
     let entry;
     if (act) {
       entry = { id: uid(), ts: Date.now(), date: dateInp.value || todayISO(), kind: act, person: person.value.trim(), amount: amt, item: name.value.trim(), tags: [], reviewed: true };
-      if (act === 'forgiven') entry.category = catSel.value || 'presents';
+      if (act === 'forgiven') entry.category = d.category || 'presents';
       else entry.wallet = wSel.value;
     } else {
-      if (!catSel.value || !wSel.value) { msg.textContent = 'Pick a category and a wallet.'; return; }
-      const guess = guessCategory({ name: name.value, incoming: d.kind === 'income' });
-      entry = { id: uid(), ts: Date.now(), date: dateInp.value || todayISO(), kind: d.kind, item: name.value.trim(), amount: amt, category: catSel.value, wallet: d.unpaid ? '' : wSel.value, tags: [], reviewed: true, unpaid: !!d.unpaid };
+      if (!d.category || !wSel.value) { msg.textContent = 'Pick a category and a wallet.'; return; }
+      entry = { id: uid(), ts: Date.now(), date: dateInp.value || todayISO(), kind: kindOf(), item: name.value.trim(), amount: amt, category: d.category, wallet: d.unpaid ? '' : wSel.value, tags: [], reviewed: true, unpaid: !!d.unpaid };
       const q = Math.round(Number(pcs.value) || 0); if (q > 1) entry.pcs = q;
     }
     save.disabled = true;
     try {
       await store.commit({ put: [entry] });
       toast('Saved');
-      if (!act && catSel.value) { const guess = guessCategory({ name: name.value, incoming: d.kind === 'income' }); if (catSel.value !== guess.id) offerRule(entry.item, entry.category); }
+      if (!act) { const guess = guessCategory({ name: name.value, incoming: entry.kind === 'income' }); if (entry.category !== guess.id) offerRule(entry.item, entry.category); }
       if (wSel.value !== state.settings.lastWallet) store.saveSettings({ lastWallet: wSel.value }).catch(saveError);
-      state.quickDraft = { kind: d.kind, date: d.date, wallet: wSel.value, catTouched: false, pcs: '' };
+      state.quickDraft = { kind: 'expense', date: d.date, wallet: wSel.value, catTouched: false, pcs: '' };
       render();
       setTimeout(() => { const n = $('#q-name'); if (n) n.focus(); }, 0);
     } catch (e) { saveError(e); save.disabled = false; }
@@ -1083,9 +1099,10 @@ function itemsPanel() {
     pcsWrap,
     el('label', { class: 'field grow' }, el('span', { text: 'Date' }), dateInp)));
   p.append(el('div', { style: 'margin:2px 0 4px' }, pcsLink));
-  p.append(el('div', { class: 'row' }, catWrap, wWrap));
+  p.append(catWrap);
+  p.append(el('div', { class: 'row' }, wWrap));
   p.append(unpaidWrap);
-  p.append(el('div', { style: 'margin:4px 0 4px' }, el('label', { class: 'check' }, debtToggle, d.kind === 'expense' ? 'This is a debt (lent, paid back, or forgiven)' : 'This is a debt (borrowed or paid back)')));
+  p.append(el('div', { style: 'margin:4px 0 4px' }, el('label', { class: 'check' }, debtToggle, 'This is a debt (lent, borrowed, paid back, or forgiven)')));
   p.append(debtRow);
   p.append(msg, el('div', { class: 'foot' },
     state.sample && state.sampleImages ? el('button', { class: 'linkbtn', type: 'button', text: 'Or scan a receipt', tabindex: '-1', onclick: () => $('#receipt-file').click() }) : el('span'),
