@@ -1513,6 +1513,11 @@ function walletDashboard(fl, since) {
   return box;
 }
 
+function historyIcon() {
+  const svg = svgEl('svg', { viewBox: '0 0 24 24', width: '22', height: '22', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' });
+  ['M3.8 12a8.2 8.2 0 1 0 1.4-4.6', 'M5.2 2.8v4.6h4.6', 'M12 7.5V12h4'].forEach((d) => svg.append(svgEl('path', { d })));
+  return svg;
+}
 function viewEntries() {
   const v = el('section');
   if (reviewQueue().length) v.append(reviewBlock());
@@ -1531,8 +1536,8 @@ function viewEntries() {
     const RANGES = [[-30, 'Last 30 days'], [-90, 'Last 90 days'], [-3650, 'All time']];
     const current = RANGES.find(([d]) => todayISO(d) === since) || RANGES[0];
     v.append(el('h2', { class: 'sec' }, el('span', { text: 'Wallets' }),
-      el('button', { class: 'linkbtn side', type: 'button', 'aria-expanded': String(!!state.showRange),
-        text: current[1], onclick: () => { state.showRange = !state.showRange; render(); } })));
+      el('button', { class: 'iconbtn', type: 'button', 'aria-expanded': String(!!state.showRange), 'aria-label': 'Time range: ' + current[1], title: current[1],
+        style: 'width:36px;height:36px;align-self:center', onclick: () => { state.showRange = !state.showRange; render(); } }, historyIcon())));
     if (state.showRange) {
       const seg = el('div', { class: 'seg', style: 'margin-bottom:12px' });
       RANGES.forEach(([d, label]) => seg.append(el('button', {
