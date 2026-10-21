@@ -982,6 +982,12 @@ function itemsPanel() {
   const amount = el('input', { id: 'q-amount', type: 'number', inputmode: 'decimal', min: '0', step: '0.01', class: 'inp', placeholder: '0.00', value: d.amount || '' });
   const pcs = el('input', { id: 'q-pcs', type: 'number', inputmode: 'numeric', min: '1', step: '1', class: 'inp', placeholder: '1', value: d.pcs || '' });
   const dateInp = el('input', { id: 'q-date', type: 'date', class: 'inp', value: d.date || todayISO() });
+  // pieces stays out of the way until asked for
+  const pcsWrap = el('label', { class: 'field', style: 'flex:0 0 84px' }, el('span', { text: 'Pcs' }), pcs);
+  const pcsLink = el('button', { class: 'linkbtn', type: 'button', id: 'q-pcs-add', text: 'Add pieces' });
+  pcsWrap.hidden = !d.pcs;
+  pcsLink.hidden = !pcsWrap.hidden;
+  pcsLink.addEventListener('click', () => { pcsWrap.hidden = false; pcsLink.hidden = true; pcs.focus(); });
   const catSel = categorySelect(d.category, { placeholder: 'Pick a category', includeExpense: d.kind === 'expense', includeIncome: d.kind === 'income', cls: 'inp' });
   catSel.id = 'q-cat';
   const catWrap = el('label', { class: 'field grow' }, el('span', { text: 'Category' }), catSel);
@@ -1032,7 +1038,7 @@ function itemsPanel() {
   });
   name.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); amount.focus(); } });
   amount.addEventListener('input', () => { d.amount = amount.value; sync(); });
-  amount.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); pcs.focus(); } });
+  amount.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); (pcsWrap.hidden ? dateInp : pcs).focus(); } });
   pcs.addEventListener('input', () => { d.pcs = pcs.value; });
   pcs.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); dateInp.focus(); } });
   dateInp.addEventListener('change', () => { d.date = dateInp.value || todayISO(); });
@@ -1074,8 +1080,9 @@ function itemsPanel() {
   p.append(el('div', { class: 'field', style: 'margin-bottom:14px' }, name), nameList, dl);
   p.append(el('div', { class: 'row' },
     el('label', { class: 'field grow' }, el('span', { text: 'Amount' }), amount),
-    el('label', { class: 'field', style: 'flex:0 0 84px' }, el('span', { text: 'Pcs' }), pcs),
+    pcsWrap,
     el('label', { class: 'field grow' }, el('span', { text: 'Date' }), dateInp)));
+  p.append(el('div', { style: 'margin:2px 0 4px' }, pcsLink));
   p.append(el('div', { class: 'row' }, catWrap, wWrap));
   p.append(unpaidWrap);
   p.append(el('div', { style: 'margin:4px 0 4px' }, el('label', { class: 'check' }, debtToggle, d.kind === 'expense' ? 'This is a debt (lent, paid back, or forgiven)' : 'This is a debt (borrowed or paid back)')));
