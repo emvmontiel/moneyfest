@@ -94,8 +94,8 @@ h3.sub { font-size: 15px; margin: 18px 0 8px; }
 .chip-btn[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .chip-btn.in { border-color: var(--earn); color: var(--earn); }
 .chip-btn.in[aria-pressed="true"] { background: var(--earn); border-color: var(--earn); color: var(--accent-ink); }
-.bubbles-wrap { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 8px; }
-.bubble-label { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.bubbles-wrap { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 8px; }
+.bubble-label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
 .bubbles { display: flex; flex-wrap: wrap; gap: 8px; }
 .freq { display: flex; gap: 7px; flex-wrap: wrap; margin: 4px 0 12px; }
 .freq button { border: 1px dashed var(--line); background: var(--bg); border-radius: 999px; padding: 5px 11px; font-size: 13px; }
@@ -767,8 +767,8 @@ function categorySelect(selected, { includeIncome = true, includeExpense = true,
   const s = el('select', { class: cls });
   if (placeholder) s.append(el('option', { value: '', text: placeholder }));
   const groups = [];
-  if (includeExpense) groups.push(['Spending', 'expense']);
-  if (includeIncome) groups.push(['Money in', 'income']);
+  if (includeExpense) groups.push(['Outflow', 'expense']);
+  if (includeIncome) groups.push(['Inflow', 'income']);
   for (const [label, type] of groups) {
     const g = el('optgroup', { label });
     state.settings.categories.filter((c) => c.type === type && (!c.hidden || c.id === selected)).forEach((c) => g.append(el('option', { value: c.id, text: c.name })));
@@ -928,8 +928,7 @@ function viewAdd() {
   v.append(el('h1', { class: 'title', text: 'Transactions' }));
   const row = el('div', { class: 'row', role: 'group', 'aria-label': 'What are you logging', style: 'gap:8px;margin-bottom:14px' });
   const modeBtn = (active, label, onclick) => row.append(el('button', { type: 'button', class: 'chip-btn', 'aria-pressed': String(active), text: label, onclick }));
-  modeBtn(state.mode === 'items', 'Transaction', () => { state.mode = 'items'; render(); });
-  modeBtn(state.mode === 'move', 'Move Funds', () => { state.mode = 'move'; render(); });
+  modeBtn(state.mode === 'move', 'Move Funds', () => { state.mode = state.mode === 'move' ? 'items' : 'move'; render(); });
   v.append(row);
   if (state.mode === 'items') v.append(itemsPanel());
   else v.append(movePanel());
@@ -981,7 +980,7 @@ function itemsPanel() {
   const dateInp = el('input', { id: 'q-date', type: 'date', class: 'inp', value: d.date || todayISO() });
   // pieces stays out of the way until asked for
   const pcsWrap = el('label', { class: 'field', style: 'flex:0 0 84px' }, el('span', { text: 'Pcs' }), pcs);
-  const pcsLink = el('button', { class: 'linkbtn', type: 'button', id: 'q-pcs-add', text: 'Add pieces' });
+  const pcsLink = el('button', { class: 'linkbtn', type: 'button', id: 'q-pcs-add', text: 'Add pieces', style: 'text-decoration:none' });
   pcsWrap.hidden = !d.pcs;
   pcsLink.hidden = !pcsWrap.hidden;
   pcsLink.addEventListener('click', () => { pcsWrap.hidden = false; pcsLink.hidden = true; pcs.focus(); });
@@ -1006,16 +1005,12 @@ function itemsPanel() {
   };
   syncVis();
 
-  // every category as a bubble; the group it belongs to decides spending or money in
+  // every category as a bubble; its type (outflow or inflow) decides the entry's kind
   const drawBubbles = () => {
     catWrap.innerHTML = '';
-    const groups = d.debtAction === 'forgiven' ? [['Spending', 'expense']] : [['Spending', 'expense'], ['Money in', 'income']];
-    for (const [label, type] of groups) {
-      const list = state.settings.categories.filter((c) => c.type === type && (!c.hidden || c.id === d.category));
-      if (!list.length) continue;
-      catWrap.append(el('div', { class: 'bubble-group' }, el('div', { class: 'bubble-label', text: label }),
-        el('div', { class: 'bubbles' }, list.map((c) => el('button', { type: 'button', class: 'chip-btn ' + (type === 'income' ? 'in' : 'out'), 'aria-pressed': String(c.id === d.category), text: c.name, onclick: () => setCat(c.id, true) })))));
-    }
+    const list = state.settings.categories.filter((c) => (d.debtAction !== 'forgiven' || c.type === 'expense') && (!c.hidden || c.id === d.category));
+    catWrap.append(el('div', { class: 'bubble-label', text: 'Category' }),
+      el('div', { class: 'bubbles' }, list.map((c) => el('button', { type: 'button', class: 'chip-btn ' + (c.type === 'income' ? 'in' : 'out'), 'aria-pressed': String(c.id === d.category), text: c.name, onclick: () => setCat(c.id, true) }))));
   };
   const setCat = (id, touched) => {
     d.category = id; if (touched) d.catTouched = true;
@@ -1567,7 +1562,7 @@ function viewEntries() {
     const wSel = opt([['', 'Any wallet'], ...state.settings.wallets.map((w) => [w.id, w.name])], f.wallet);
     const tSel = opt([['', 'Any tag'], ...allTags().map((t) => [t, '#' + t])], f.tag);
     v.append(el('div', { class: 'panel filters' }, el('div', { class: 'form-grid' },
-      el('label', { class: 'field' }, el('span', { text: 'Type' }), mk('type', opt([['all', 'Everything'], ['spending', 'Spending'], ['income', 'Money in'], ['transfer', 'Moves'], ['utang', 'Debt (lent, borrowed, etc.)']], f.type))),
+      el('label', { class: 'field' }, el('span', { text: 'Type' }), mk('type', opt([['all', 'Everything'], ['spending', 'Outflow'], ['income', 'Inflow'], ['transfer', 'Moves'], ['utang', 'Debt (lent, borrowed, etc.)']], f.type))),
       el('label', { class: 'field' }, el('span', { text: 'Category' }), mk('cat', catSel)),
       el('label', { class: 'field' }, el('span', { text: 'Wallet' }), mk('wallet', wSel)),
       el('label', { class: 'field' }, el('span', { text: 'Tag' }), mk('tag', tSel)),
@@ -2012,7 +2007,7 @@ function reportMonth(v) {
 function flowChart(s) {
   const T = Math.max(s.income, s.spent);
   if (!T) return el('div', { class: 'empty', text: 'Nothing came in or went out this month.' });
-  let left = Object.entries(s.incCats).map(([k, x]) => ({ name: catName(k) === 'No category' ? 'Money in' : catName(k), v: x, color: 'var(--earn)' }));
+  let left = Object.entries(s.incCats).map(([k, x]) => ({ name: catName(k) === 'No category' ? 'Inflow' : catName(k), v: x, color: 'var(--earn)' }));
   if (s.spent > s.income) left.push({ name: 'From savings', v: round2(s.spent - s.income), color: 'var(--muted)' });
   let right = Object.entries(s.cats).map(([k, x]) => ({ name: catName(k), v: x, color: 'var(--spend)' })).sort((a, b) => b.v - a.v);
   if (right.length > 8) { const rest = right.slice(7); right = right.slice(0, 7).concat([{ name: 'Everything else', v: round2(rest.reduce((a, b) => a + b.v, 0)), color: 'var(--spend)' }]); }
@@ -2315,10 +2310,10 @@ function moreSetup(v) {
     const hide = el('input', { type: 'checkbox', checked: !!c.hidden });
     const commit = () => store.saveSettings({ categories: state.settings.categories.map((x) => (x.id === c.id ? { ...x, name: name.value.trim() || x.name, hidden: hide.checked } : x)) }).then(() => toast('Saved')).catch(saveError);
     [name, hide].forEach((n) => n.addEventListener('change', commit));
-    cl.append(el('li', { class: 'set-row' }, el('span', { class: 'tag', text: c.type === 'income' ? 'Income' : 'Spending' }), name, el('label', { class: 'hide' }, hide, 'Hide')));
+    cl.append(el('li', { class: 'set-row' }, el('span', { class: 'tag', text: c.type === 'income' ? 'Inflow' : 'Outflow' }), name, el('label', { class: 'hide' }, hide, 'Hide')));
   });
   const ncn = el('input', { placeholder: 'New category', autocomplete: 'off' });
-  const nct = el('select', {}, el('option', { value: 'expense', text: 'Spending' }), el('option', { value: 'income', text: 'Income' }));
+  const nct = el('select', {}, el('option', { value: 'expense', text: 'Outflow' }), el('option', { value: 'income', text: 'Inflow' }));
   cp.append(cl, el('div', { class: 'set-add' }, ncn, nct, el('button', { class: 'btn small', type: 'button', text: 'Add category', onclick: () => { const n = ncn.value.trim(); if (!n) return; store.saveSettings({ categories: state.settings.categories.concat([{ id: 'c' + uid().slice(0, 8), name: n, type: nct.value }]) }).then(() => toast('Category added')).catch(saveError); } })));
   v.append(cp);
 }
@@ -2666,7 +2661,7 @@ function render() {
 }
 render.keepScroll = true;
 $$('.tab').forEach((t) => t.addEventListener('click', () => {
-  if (state.tab !== t.dataset.tab) { state.tab = t.dataset.tab; if (state.tab === 'more') state.more = 'menu'; if (state.tab !== 'entries') { state.selecting = false; state.selected.clear(); } }
+  if (state.tab !== t.dataset.tab) { state.tab = t.dataset.tab; if (state.tab === 'add') state.mode = 'items'; if (state.tab === 'more') state.more = 'menu'; if (state.tab !== 'entries') { state.selecting = false; state.selected.clear(); } }
   render.keepScroll = false; render(); render.keepScroll = true; window.scrollTo(0, 0);
 }));
 $('#scrim').addEventListener('click', (e) => { if (e.target.id === 'scrim') closeSheet(); });
